@@ -67,7 +67,7 @@ def image_refresh(image: str, **kwargs: Any):
         if dry_run:
             task.would('./image-upload', '--prune-s3', image)
         else:
-            run('./image-upload', '--prune-s3', image)
+            run('./image-upload', image)
 
         # compare it to the previous one (on hosts we can ssh to)
         if old_image and os.path.exists(f'{SCRIPTS_DIR}/{image}.setup'):
