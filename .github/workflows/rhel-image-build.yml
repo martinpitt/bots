@@ -1,4 +1,4 @@
-name: RHEL Image Build on Testing Farm
+name: TF image build run
 on:
   pull_request:
 
@@ -10,9 +10,6 @@ jobs:
       pull-requests: write
       statuses: write
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v5
-
       - name: Schedule tests on Testing Farm
         id: testing_farm
         uses: sclorg/testing-farm-as-github-action@v2
@@ -28,35 +25,28 @@ jobs:
           tmt_hardware: '{"virtualization": {"is-virtualized": true, "is-supported": true}}'
           # Pass secrets to the test environment (semicolon-separated)
           secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
+          # Pass git info for cloning inside container
+          variables: GIT_URL=${{ github.event.pull_request.head.repo.clone_url }};GIT_REF=${{ github.event.pull_request.head.ref }}
           # Use our tmt plan
           tmt_plan_regex: rhel-image-build
           # Increase timeout for image building (once we do actual builds)
           timeout: 120
 
-      - name: Comment on PR with results
+      - name: Post status with results
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            const requestId = '${{ steps.testing_farm.outputs.request_id }}';
-            const requestUrl = '${{ steps.testing_farm.outputs.request_url }}';
-            const testLogUrl = '${{ steps.testing_farm.outputs.test_log_url }}';
-            const artifactsUrl = `https://artifacts.osci.redhat.com/testing-farm/${requestId}/`;
+            const success = '${{ steps.testing_farm.conclusion }}' === 'success';
+            const state = success ? 'success' : 'failure';
+            const description = success ? 'RHEL image build completed' : 'RHEL image build failed';
 
-            const body = `✅ Testing Farm test completed successfully!
-
-            **Verified:**
-            - Virtualization support (/dev/kvm available)
-            - Secret passing works correctly
-
-            **Links:**
-            - [Testing Farm Request](${requestUrl})
-            - [Test Logs](${testLogUrl})
-            - [Artifacts](${artifactsUrl})`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
+              sha: '${{ github.event.pull_request.head.sha }}',
+              state: state,
+              target_url: `https://artifacts.osci.redhat.com/testing-farm/${{ steps.testing_farm.outputs.request_id }}/`,
+              description: description,
+              context: 'RHEL Image Build logs'
             });

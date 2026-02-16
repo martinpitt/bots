@@ -4,6 +4,12 @@ description: |
     - Virtualization support (/dev/kvm)
     - Secret passing (TEST_SECRET)
 
+prepare:
+    how: install
+    package:
+      - podman
+      - git
+
 discover:
     how: fmf
     test: rhel-setup-test
@@ -12,7 +18,7 @@ execute:
     how: tmt
 
 /rhel-setup-test:
-    summary: Verify virtualization and secrets
+    summary: Build RHEL 10.2 image
     test: |
         set -ex
         # Check that we have virtualization support
@@ -23,5 +29,20 @@ execute:
         test -n "$TEST_SECRET"
         test "$TEST_SECRET" = "foo"
 
-        echo "SUCCESS: Virtualization available and secrets passed correctly"
-    duration: 5m
+        echo "Virtualization and secrets verified"
+
+        # Clone and build RHEL 10.2 image in the cockpit tasks container
+        podman run --rm \
+            --device /dev/kvm \
+            -e GIT_URL="$GIT_URL" \
+            -e GIT_REF="$GIT_REF" \
+            ghcr.io/cockpit-project/tasks \
+            sh -exc "
+                git clone \$GIT_URL bots
+                cd bots
+                git checkout \$GIT_REF
+                ./image-create -v rhel-10-2
+            "
+
+        echo "SUCCESS: RHEL 10.2 image build completed"
+    duration: 60m
