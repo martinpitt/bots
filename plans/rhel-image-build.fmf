@@ -24,4 +24,14 @@ execute:
         test "$TEST_SECRET" = "foo"
 
         echo "SUCCESS: Virtualization available and secrets passed correctly"
+
+        # Post comment to PR
+        if [ -n "$GITHUB_TOKEN" ] && [ -n "$PR_NUMBER" ] && [ -n "$REPO" ]; then
+            curl -X POST \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments \
+                -d '{"body":"✅ Testing Farm test completed successfully!\n\nVerified:\n- Virtualization support (/dev/kvm available)\n- Secret passing works correctly"}' \
+                || echo "Warning: Failed to post PR comment"
+        fi
     duration: 5m

@@ -1,10 +1,6 @@
 name: RHEL Image Build on Testing Farm
 on:
-  # Allow manual triggering for testing
-  workflow_dispatch:
-  # Uncomment to run on push to specific branches
-  # push:
-  #   branches: [tf-image-build]
+  pull_request:
 
 jobs:
   test-rhel-setup:
@@ -21,13 +17,18 @@ jobs:
         uses: sclorg/testing-farm-as-github-action@v2
         with:
           api_key: ${{ secrets.TESTING_FARM_API_KEY }}
+          # https://api.testing-farm.io/v0.1/composes/redhat
+          compose: Fedora-43-Updated
+          # Specify git repository and ref for PR head
+          git_url: ${{ github.event.pull_request.head.repo.clone_url }}
+          git_ref: ${{ github.event.pull_request.head.ref }}
           # Request virtualized guest with KVM support
-          tmt_hardware: |
-            virtualization:
-              is-virtualized: true
-              is-supported: true
-          # Pass secrets to the test environment
-          secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
+          # https://tmt.readthedocs.io/en/stable/spec/hardware.html#virtualization
+          tmt_hardware: '{"virtualization": {"is-virtualized": true, "is-supported": true}}'
+          # Pass secrets to the test environment (semicolon-separated)
+          secrets: TEST_SECRET=${{ secrets.TEST_SECRET }};GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          # Pass PR context as environment variables (semicolon-separated)
+          variables: PR_NUMBER=${{ github.event.pull_request.number }};REPO=${{ github.repository }}
           # Use our tmt plan
           tmt_plan_regex: rhel-image-build
           # Increase timeout for image building (once we do actual builds)
