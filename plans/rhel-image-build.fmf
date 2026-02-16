@@ -1,0 +1,27 @@
+summary: Test RHEL image build setup on Testing Farm
+description: |
+    Verify Testing Farm RHEL ranch capabilities:
+    - Virtualization support (/dev/kvm)
+    - Secret passing (TEST_SECRET)
+
+discover:
+    how: fmf
+    test: rhel-setup-test
+
+execute:
+    how: tmt
+
+/rhel-setup-test:
+    summary: Verify virtualization and secrets
+    test: |
+        set -ex
+        # Check that we have virtualization support
+        ls -l /dev/kvm
+        test -c /dev/kvm
+
+        # Check that TEST_SECRET is set and has expected value
+        test -n "$TEST_SECRET"
+        test "$TEST_SECRET" = "foo"
+
+        echo "SUCCESS: Virtualization available and secrets passed correctly"
+    duration: 5m
