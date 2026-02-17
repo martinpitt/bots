@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Schedule tests on Testing Farm
         id: testing_farm
-        uses: sclorg/testing-farm-as-github-action@v2
+        uses: sclorg/testing-farm-as-github-action@v4
         with:
           api_key: ${{ secrets.TESTING_FARM_API_KEY }}
           # https://api.testing-farm.io/v0.1/composes/redhat
@@ -46,7 +46,7 @@ jobs:
               repo: context.repo.repo,
               sha: '${{ github.event.pull_request.head.sha }}',
               state: state,
-              target_url: `https://artifacts.osci.redhat.com/testing-farm/${{ steps.testing_farm.outputs.request_id }}/`,
+              target_url: `${{ steps.testing_farm.outputs.test_log_url }}/`,
               description: description,
               context: 'RHEL Image Build logs'
             });
