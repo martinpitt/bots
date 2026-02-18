@@ -18,8 +18,13 @@ jobs:
           git_url: ${{ github.event.pull_request.head.repo.clone_url }}
           git_ref: ${{ github.event.pull_request.head.ref }}
           # Request virtualized guest with KVM support
-          # https://tmt.readthedocs.io/en/stable/spec/hardware.html#virtualization
-          tmt_hardware: '{"virtualization": {"is-virtualized": true, "is-supported": true}}'
+          # https://tmt.readthedocs.io/en/stable/spec/hardware.html
+          tmt_hardware: |
+            {
+              "virtualization": {"is-virtualized": true, "is-supported": true},
+              "cpu": {"cores": ">= 16"},
+              "memory": ">= 32 GB"
+            }
           # Pass secrets to the test environment (semicolon-separated)
           secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
           # Pass git info for cloning inside container
