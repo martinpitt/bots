@@ -11,9 +11,9 @@ jobs:
       - name: Schedule test on Testing Farm
         uses: sclorg/testing-farm-as-github-action@v4
         with:
-          api_key: ${{ secrets.TESTING_FARM_API_KEY }}
-          # https://api.testing-farm.io/v0.1/composes/redhat
-          compose: Fedora-43-Updated
+          api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_KEY }}
+          # https://api.testing-farm.io/v0.1/composes/public
+          compose: Fedora-latest
           # Specify git repository and ref for PR head
           git_url: ${{ github.event.pull_request.head.repo.clone_url }}
           git_ref: ${{ github.event.pull_request.head.ref }}
