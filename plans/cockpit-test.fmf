@@ -1,4 +1,4 @@
-summary: Test cockpit test on Testing Farm
+summary: Run cockpit test
 prepare:
     how: install
     package:
@@ -6,13 +6,14 @@ prepare:
 
 discover:
     how: fmf
-    test: run
-
 execute:
     how: tmt
 
 /run:
     summary: Run test in tasks container
+    environment:
+        TEST_OS:
+        TEST_SCENARIO:
     test: |
         set -ex
         # get hw info
@@ -26,6 +27,8 @@ execute:
             --ulimit core=-1 \
             -e GIT_URL="$GIT_URL" \
             -e GIT_REF="$GIT_REF" \
+            -e TEST_OS="$TEST_OS" \
+            -e TEST_SCENARIO="$TEST_SCENARIO" \
             ghcr.io/cockpit-project/tasks \
             sh -exc "
                 git clone https://github.com/cockpit-project/cockpit-files
