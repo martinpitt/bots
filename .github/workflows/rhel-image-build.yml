@@ -22,8 +22,8 @@ jobs:
           tmt_hardware: |
             {
               "virtualization": {"is-virtualized": true, "is-supported": true},
-              "cpu": {"cores": ">= 16"},
-              "memory": ">= 32 GB"
+              "cpu": {"cores": ">= 8"},
+              "memory": ">= 16 GB"
             }
           # Pass secrets to the test environment (semicolon-separated)
           secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
