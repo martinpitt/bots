@@ -21,9 +21,7 @@ jobs:
           # https://tmt.readthedocs.io/en/stable/spec/hardware.html
           tmt_hardware: |
             {
-              "virtualization": {"is-virtualized": true, "is-supported": true},
-              "cpu": {"cores": ">= 4"},
-              "memory": ">= 8 GB"
+              "virtualization": {"is-virtualized": true, "is-supported": true}
             }
           # Pass secrets to the test environment (semicolon-separated)
           secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
