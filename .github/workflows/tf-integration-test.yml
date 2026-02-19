@@ -42,7 +42,7 @@ jobs:
           #    "memory": ">= 16 GB"
           tmt_hardware: |
             {
-              "virtualization": {"is-virtualized": true, "is-supported": true}
+              "virtualization": {"is-supported": true}
             }
           # Pass secrets to the test environment (semicolon-separated)
           secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
