@@ -1,0 +1,151 @@
+# Process ` * [ ] image-refresh imgname` (and theoretically other, but we don't
+# have any others) tasks in issues/PRs.
+#
+# Run `issue-scan`, schedule the resulting job on Testing Farm, post a comment
+# with the link to the logs
+name: issue-scan
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled]
+
+jobs:
+  scan:
+    # Only run for issues/PRs with 'bot' label
+    if: contains(github.event.*.labels.*.name, 'bot')
+    runs-on: ubuntu-latest
+    environment: image-build
+    permissions:
+      # create new branches
+      contents: write
+      # post comments and PRs
+      issues: write
+      pull-requests: write
+    # this enables running/testing this workflow on a fork, otherwise issue-scan will fail
+    # as it uses
+    # env:
+    #  COCKPIT_TESTMAP_INJECT: main/none
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+
+      - name: Set up GitHub token
+        run: |
+          mkdir -p ~/.config/cockpit-dev
+          echo '${{ secrets.GITHUB_TOKEN }}' > ~/.config/cockpit-dev/github-token
+
+      - name: Scan issue/PR for tasks
+        id: scan
+        run: |
+          # Scan the issue/PR for bot tasks
+          GITHUB_BASE=${{ github.repository }} \
+          ./issue-scan --issues-data '${{ toJSON(github.event) }}' > scan-output.json
+          SCAN_OUTPUT=$(jq -c . scan-output.json)
+          echo "---- Scan output ----"
+          echo "$SCAN_OUTPUT"
+          echo "---------------------"
+          echo "scan_output=$SCAN_OUTPUT" >> $GITHUB_OUTPUT
+
+      - name: Determine git ref
+        id: gitref
+        if: steps.scan.outputs.scan_output != ''
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "git_url=${{ github.event.pull_request.head.repo.clone_url }}" >> $GITHUB_OUTPUT
+            echo "git_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "git_url=${{ github.event.repository.clone_url }}" >> $GITHUB_OUTPUT
+            echo "git_ref=${{ github.event.repository.default_branch }}" >> $GITHUB_OUTPUT
+          fi
+
+      # https://api.dev.testing-farm.io/docs ; don't use sclorg/testing-farm-as-github-action4
+      # as we don't want to poll (that's just a waste of GH action runner time)
+      - name: Schedule on Testing Farm
+        id: testing_farm
+        if: steps.scan.outputs.scan_output != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Build Testing Farm API request using jq to avoid control character issues
+          # compose does not matter much, we just need python-aiohttp and podman to for job-runner and the tasks container
+          echo '${{ steps.scan.outputs.scan_output }}' | jq \
+            --arg api_key '${{ secrets.TESTING_FARM_RH_TOKEN }}' \
+            --arg git_url '${{ steps.gitref.outputs.git_url }}' \
+            --arg git_ref '${{ steps.gitref.outputs.git_ref }}' \
+            --arg gh_token '${{ secrets.COCKPITUOUS_TOKEN }}' \
+            --arg s3_eu '${{ secrets.S3_KEY_EU }}' \
+            --arg s3_us '${{ secrets.S3_KEY_US }}' \
+            --arg s3_logs '${{ secrets.S3_KEY_LOGS }}' \
+            '{
+              "api_key": $api_key,
+              "test": {
+                "fmf": {
+                  "url": $git_url,
+                  "ref": $git_ref,
+                  "name": "job-runner"
+                }
+              },
+              "environments": [{
+                "arch": "x86_64",
+                "os": {"compose": "Fedora-43-Updated"},
+                "variables": {
+                  "JOB_JSON": (.job | tojson)
+                },
+                "secrets": {
+                  "GITHUB_TOKEN": $gh_token,
+                  "S3_KEY_EU": $s3_eu,
+                  "S3_KEY_US": $s3_us,
+                  "S3_KEY_LOGS": $s3_logs
+                },
+                "hardware": {"virtualization": {"is-virtualized": true, "is-supported": true}}
+              }],
+              "settings": {
+                "pipeline": {"timeout": 60}
+              }
+            }' > tf-request.json
+
+          # Submit to Testing Farm
+          TF_RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d @tf-request.json \
+            https://api.dev.testing-farm.io/v0.1/requests)
+
+          # Debug: show the whole response
+          # echo "Testing Farm response:"
+          # echo "$TF_RESPONSE" | jq .
+
+          # Sadly, the response does not include the artifacts URL, the only
+          # useful thing is the ID
+          TF_ID=$(echo "$TF_RESPONSE" | jq -r '.id')
+          echo "test_log_url=https://artifacts.osci.redhat.com/testing-farm/$TF_ID" >> $GITHUB_OUTPUT
+
+      - name: Post comment with Testing Farm link
+        if: steps.scan.outputs.scan_output != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine issue/PR number
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ISSUE_NUMBER="${{ github.event.pull_request.number }}"
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          fi
+
+          HUMAN=$(echo '${{ steps.scan.outputs.scan_output }}' | jq -r '.human')
+          JOB_JSON=$(echo '${{ steps.scan.outputs.scan_output }}' | jq '.job')
+
+          cat << COMMENT_EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
+          **Task scheduled:** $HUMAN
+
+          Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
+
+          <details>
+          <summary>Job JSON</summary>
+
+          \`\`\`json
+          $JOB_JSON
+          \`\`\`
+          </details>
+          COMMENT_EOF
