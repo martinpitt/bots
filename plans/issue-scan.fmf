@@ -1,0 +1,40 @@
+summary: Run bot tasks on Testing Farm
+prepare:
+    how: install
+    package:
+      - podman
+      - git
+      - jq
+
+discover:
+    how: fmf
+    test: issue-scan
+
+execute:
+    how: tmt
+
+/issue-scan:
+    summary: Run bot task command from issue-scan
+    # slightly less than the timeout in .github/workflows/issue-scan.yml
+    duration: 55m
+    tag:
+      - issue-scan
+      - testing-farm
+    test: |
+        set -ex
+
+        # Run everything inside the tasks container
+        podman run --rm \
+            --device /dev/kvm \
+            -e GITHUB_TOKEN \
+            -e S3_KEY_EU \
+            -e S3_KEY_US \
+            -e S3_KEY_LOGS \
+            -e GIT_URL \
+            -e GIT_REF \
+            -e TASK_COMMAND \
+            -e TASK_CONTEXT \
+            -e TASK_SLUG \
+            -v "$PWD:/plans:ro,z" \
+            ghcr.io/cockpit-project/tasks \
+            bash /plans/issue-scan.sh

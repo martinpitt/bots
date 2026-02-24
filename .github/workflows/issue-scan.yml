@@ -1,0 +1,128 @@
+name: issue-scan
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled]
+
+
+jobs:
+  scan:
+    # Only run for issues/PRs with 'bot' label
+    if: contains(github.event.*.labels.*.name, 'bot')
+    runs-on: ubuntu-latest
+    environment: image-build
+    permissions:
+      # create new branches
+      contents: write
+      # post statuses/comments
+      issues: write
+      pull-requests: write
+      statuses: write
+    # XXX: for testing on my fork only, don't land this
+    env:
+      COCKPIT_TESTMAP_INJECT: main/none
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v5
+
+      - name: Set up GitHub token
+        run: |
+          mkdir -p ~/.config/cockpit-dev
+          echo '${{ secrets.GITHUB_TOKEN }}' > ~/.config/cockpit-dev/github-token
+
+      - name: Scan issue/PR for tasks
+        id: scan
+        run: |
+          # Scan the issue/PR for bot tasks
+          GITHUB_BASE=${{ github.repository }} \
+          ./issue-scan --issues-data '${{ toJSON(github.event) }}' > scan-output.json
+
+          # for debugging
+          cat scan-output.json
+
+          # Check if we got any tasks
+          if [ ! -s scan-output.json ]; then
+            echo "No bot tasks found"
+            echo "has_tasks=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Extract the command from JSON
+          COMMAND=$(jq -r '.job.command | join(" ")' scan-output.json)
+          SLUG=$(jq -r '.job.slug' scan-output.json)
+          CONTEXT=$(jq -r '.job.context' scan-output.json)
+          SHA=$(jq -r '.job.sha' scan-output.json)
+
+          echo "has_tasks=true" >> $GITHUB_OUTPUT
+          echo "command=$COMMAND" >> $GITHUB_OUTPUT
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Determine git ref
+        id: gitref
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "git_url=${{ github.event.pull_request.head.repo.clone_url }}" >> $GITHUB_OUTPUT
+            echo "git_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "git_url=${{ github.event.repository.clone_url }}" >> $GITHUB_OUTPUT
+            echo "git_ref=${{ github.event.repository.default_branch }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Schedule on Testing Farm
+        id: testing_farm
+        if: steps.scan.outputs.has_tasks == 'true'
+        uses: sclorg/testing-farm-as-github-action@v4
+        with:
+          # does not matter much, we just need `podman` to run the tasks container
+          compose: Fedora-43-Updated
+          timeout: 60
+          api_key: ${{ secrets.TESTING_FARM_RH_TOKEN }}
+          git_url: ${{ steps.gitref.outputs.git_url }}
+          git_ref: ${{ steps.gitref.outputs.git_ref }}
+          # Provide commit_sha so action doesn't try to fetch PR info via API
+          commit_sha: ${{ steps.scan.outputs.sha }}
+          # For PRs, provide the PR number for comments/status
+          pr_number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
+          tmt_hardware: '{"virtualization": {"is-virtualized": true, "is-supported": true}}'
+          secrets: >
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }};
+            S3_KEY_EU=${{ secrets.S3_KEY_EU }};
+            S3_KEY_US=${{ secrets.S3_KEY_US }};
+            S3_KEY_LOGS=${{ secrets.S3_KEY_LOGS }}
+          variables: >
+            GIT_URL=${{ steps.gitref.outputs.git_url }};
+            GIT_REF=${{ steps.gitref.outputs.git_ref }};
+            TASK_COMMAND=${{ steps.scan.outputs.command }};
+            TASK_SLUG=${{ steps.scan.outputs.slug }};
+            TASK_CONTEXT=${{ steps.scan.outputs.context }}
+          tmt_plan_regex: issue-scan
+
+      - name: Post Testing Farm failure comment
+        if: failure() && steps.testing_farm.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Determine issue/PR number
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ISSUE_NUMBER="${{ github.event.pull_request.number }}"
+          else
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          fi
+
+          # Post comment with Testing Farm log URL
+          gh issue comment "$ISSUE_NUMBER" --body "**Bot task failed on Testing Farm**
+
+          Context: \`${{ steps.scan.outputs.context }}\`
+          Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
+          Request URL: ${{ steps.testing_farm.outputs.request_url }}"
+
+      - name: Comment on issue (future)
+        if: steps.scan.outputs.has_tasks == 'true'
+        run: |
+          echo "TODO: Post comment with Testing Farm link"
+          echo "Context: ${{ steps.scan.outputs.context }}"
+          echo "Slug: ${{ steps.scan.outputs.slug }}"
