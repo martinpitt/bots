@@ -44,11 +44,11 @@ run-args = [
 
 [container.secrets]
 github-token = [
-    '--volume=$PWD/secrets/github-token:/run/secrets/github-token:ro',
+    '--volume=$PWD/secrets/github-token:/run/secrets/github-token:U,ro',
     '--env=COCKPIT_GITHUB_TOKEN_FILE=/run/secrets/github-token',
 ]
 image-upload = [
-    '--volume=$PWD/secrets/s3-keys:/run/secrets/s3-keys:ro',
+    '--volume=$PWD/secrets/s3-keys:/run/secrets/s3-keys:U,ro',
     '--env=COCKPIT_S3_KEY_DIR=/run/secrets/s3-keys',
 ]
 TOML_EOF
