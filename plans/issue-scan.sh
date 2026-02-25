@@ -54,6 +54,4 @@ image-upload = [
 TOML_EOF
 
 BOTS_DIR=$(git rev-parse --show-toplevel)
-# Decode the base64-encoded job JSON
-JOB_JSON=$(echo "$JOB_JSON_B64" | base64 -d)
 "$BOTS_DIR/job-runner" --config-file job-runner.toml json "$JOB_JSON"
