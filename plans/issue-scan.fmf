@@ -3,8 +3,8 @@ prepare:
     how: install
     package:
       - podman
-      - git
-      - jq
+      - python3-aiohttp+speedups
+      - python3-aioresponses
 
 discover:
     how: fmf
@@ -20,21 +20,4 @@ execute:
     tag:
       - issue-scan
       - testing-farm
-    test: |
-        set -ex
-
-        # Run everything inside the tasks container
-        podman run --rm \
-            --device /dev/kvm \
-            -e GITHUB_TOKEN \
-            -e S3_KEY_EU \
-            -e S3_KEY_US \
-            -e S3_KEY_LOGS \
-            -e GIT_URL \
-            -e GIT_REF \
-            -e TASK_COMMAND \
-            -e TASK_CONTEXT \
-            -e TASK_SLUG \
-            -v "$PWD:/plans:ro,z" \
-            ghcr.io/cockpit-project/tasks \
-            bash /plans/issue-scan.sh
+    test: ./issue-scan.sh

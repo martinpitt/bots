@@ -45,21 +45,15 @@ jobs:
           # Check if we got any tasks
           if [ ! -s scan-output.json ]; then
             echo "No bot tasks found"
-            echo "has_tasks=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Extract the command from JSON
-          COMMAND=$(jq -r '.job.command | join(" ")' scan-output.json)
-          SLUG=$(jq -r '.job.slug' scan-output.json)
-          CONTEXT=$(jq -r '.job.context' scan-output.json)
+          # Extract just the sha (for commit_sha) and pass the whole job JSON
           SHA=$(jq -r '.job.sha' scan-output.json)
+          JOB_JSON=$(jq -c '.job' scan-output.json)
 
-          echo "has_tasks=true" >> $GITHUB_OUTPUT
-          echo "command=$COMMAND" >> $GITHUB_OUTPUT
-          echo "slug=$SLUG" >> $GITHUB_OUTPUT
-          echo "context=$CONTEXT" >> $GITHUB_OUTPUT
           echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "job_json=$JOB_JSON" >> $GITHUB_OUTPUT
 
       - name: Determine git ref
         id: gitref
@@ -74,7 +68,7 @@ jobs:
 
       - name: Schedule on Testing Farm
         id: testing_farm
-        if: steps.scan.outputs.has_tasks == 'true'
+        if: steps.scan.outputs.job_json != ''
         uses: sclorg/testing-farm-as-github-action@v4
         with:
           # does not matter much, we just need `podman` to run the tasks container
@@ -94,11 +88,7 @@ jobs:
             S3_KEY_US=${{ secrets.S3_KEY_US }};
             S3_KEY_LOGS=${{ secrets.S3_KEY_LOGS }}
           variables: >
-            GIT_URL=${{ steps.gitref.outputs.git_url }};
-            GIT_REF=${{ steps.gitref.outputs.git_ref }};
-            TASK_COMMAND=${{ steps.scan.outputs.command }};
-            TASK_SLUG=${{ steps.scan.outputs.slug }};
-            TASK_CONTEXT=${{ steps.scan.outputs.context }}
+            JOB_JSON=${{ steps.scan.outputs.job_json }}
           tmt_plan_regex: issue-scan
 
       - name: Post Testing Farm failure comment
@@ -113,16 +103,13 @@ jobs:
             ISSUE_NUMBER="${{ github.event.issue.number }}"
           fi
 
-          # Post comment with Testing Farm log URL
-          gh issue comment "$ISSUE_NUMBER" --body "**Bot task failed on Testing Farm**
+          # Create comment body with properly formatted JSON
+          cat << EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
+          **Job failed on Testing Farm**
 
-          Context: \`${{ steps.scan.outputs.context }}\`
+          \`\`\`json
+          $(echo '${{ steps.scan.outputs.job_json }}' | jq .)
+          \`\`\`
+
           Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
-          Request URL: ${{ steps.testing_farm.outputs.request_url }}"
-
-      - name: Comment on issue (future)
-        if: steps.scan.outputs.has_tasks == 'true'
-        run: |
-          echo "TODO: Post comment with Testing Farm link"
-          echo "Context: ${{ steps.scan.outputs.context }}"
-          echo "Slug: ${{ steps.scan.outputs.slug }}"
+          EOF
