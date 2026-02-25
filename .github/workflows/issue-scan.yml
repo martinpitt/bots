@@ -48,12 +48,13 @@ jobs:
             exit 0
           fi
 
-          # Extract just the sha (for commit_sha) and pass the whole job JSON
+          # Extract just the sha (for commit_sha) and pass the whole job JSON (base64 encoded)
           SHA=$(jq -r '.job.sha' scan-output.json)
           JOB_JSON=$(jq -c '.job' scan-output.json)
+          JOB_JSON_B64=$(echo "$JOB_JSON" | base64 -w0)
 
           echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "job_json=$JOB_JSON" >> $GITHUB_OUTPUT
+          echo "job_json_b64=$JOB_JSON_B64" >> $GITHUB_OUTPUT
 
       - name: Determine git ref
         id: gitref
@@ -70,7 +71,7 @@ jobs:
       # as we don't want to poll (that's just a waste of GH action runner time)
       - name: Schedule on Testing Farm
         id: testing_farm
-        if: steps.scan.outputs.job_json != ''
+        if: steps.scan.outputs.job_json_b64 != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -91,7 +92,7 @@ jobs:
               "arch": "x86_64",
               "os": {"compose": "Fedora-43-Updated"},
               "variables": {
-                "JOB_JSON": ${{ steps.scan.outputs.job_json }}
+                "JOB_JSON_B64": "${{ steps.scan.outputs.job_json_b64 }}"
               },
               "secrets": {
                 "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
@@ -125,7 +126,7 @@ jobs:
           echo "test_log_url=$TF_ARTIFACTS_URL" >> $GITHUB_OUTPUT
 
       - name: Post comment with Testing Farm link
-        if: steps.scan.outputs.job_json != ''
+        if: steps.scan.outputs.job_json_b64 != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -140,7 +141,7 @@ jobs:
           **Bot task scheduled on Testing Farm**
 
           \`\`\`json
-          $(echo '${{ steps.scan.outputs.job_json }}' | jq .)
+          $(echo '${{ steps.scan.outputs.job_json_b64 }}' | base64 -d | jq .)
           \`\`\`
 
           Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
