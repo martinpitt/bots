@@ -48,12 +48,9 @@ jobs:
             exit 0
           fi
 
-          # Extract just the sha (for commit_sha) and pass the whole job JSON
-          SHA=$(jq -r '.job.sha' scan-output.json)
-          JOB_JSON=$(jq -c '.job' scan-output.json)
-
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "job_json=$JOB_JSON" >> $GITHUB_OUTPUT
+          # Store the full scan output (compact JSON)
+          SCAN_OUTPUT=$(jq -c . scan-output.json)
+          echo "scan_output=$SCAN_OUTPUT" >> $GITHUB_OUTPUT
 
       - name: Determine git ref
         id: gitref
@@ -70,18 +67,17 @@ jobs:
       # as we don't want to poll (that's just a waste of GH action runner time)
       - name: Schedule on Testing Farm
         id: testing_farm
-        if: steps.scan.outputs.job_json != ''
+        if: steps.scan.outputs.scan_output != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
 
           # Build Testing Farm API request using jq to avoid control character issues
           # compose does not matter much, we just need python-aiohttp and podman to for job-runner and the tasks container
-          jq -n \
+          echo '${{ steps.scan.outputs.scan_output }}' | jq \
             --arg api_key '${{ secrets.TESTING_FARM_RH_TOKEN }}' \
             --arg git_url '${{ steps.gitref.outputs.git_url }}' \
             --arg git_ref '${{ steps.gitref.outputs.git_ref }}' \
-            --arg job_json '${{ steps.scan.outputs.job_json }}' \
             --arg gh_token '${{ secrets.GITHUB_TOKEN }}' \
             --arg s3_eu '${{ secrets.S3_KEY_EU }}' \
             --arg s3_us '${{ secrets.S3_KEY_US }}' \
@@ -99,7 +95,7 @@ jobs:
                 "arch": "x86_64",
                 "os": {"compose": "Fedora-43-Updated"},
                 "variables": {
-                  "JOB_JSON": $job_json
+                  "JOB_JSON": (.job | tojson)
                 },
                 "secrets": {
                   "GITHUB_TOKEN": $gh_token,
@@ -124,15 +120,13 @@ jobs:
           echo "Testing Farm response:"
           echo "$TF_RESPONSE" | jq .
 
-          # Parse response
+          # Sadly, the response does not include the artifacts URL, the only
+          # useful thing is the ID
           TF_ID=$(echo "$TF_RESPONSE" | jq -r '.id')
-          # TODO: don't hardcode this, extract from response
-          TF_ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/$TF_ID"
-
-          echo "test_log_url=$TF_ARTIFACTS_URL" >> $GITHUB_OUTPUT
+          echo "test_log_url=https://artifacts.osci.redhat.com/testing-farm/$TF_ID" >> $GITHUB_OUTPUT
 
       - name: Post comment with Testing Farm link
-        if: steps.scan.outputs.job_json != ''
+        if: steps.scan.outputs.scan_output != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -143,12 +137,18 @@ jobs:
             ISSUE_NUMBER="${{ github.event.issue.number }}"
           fi
 
-          cat << COMMENT_EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
-          **Bot task scheduled on Testing Farm**
+          HUMAN=$(echo '${{ steps.scan.outputs.scan_output }}' | jq -r '.human')
+          JOB_JSON=$(echo '${{ steps.scan.outputs.scan_output }}' | jq '.job')
 
-          \`\`\`json
-          $(echo '${{ steps.scan.outputs.job_json }}' | jq .)
-          \`\`\`
+          cat << COMMENT_EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
+          **Task scheduled:** $HUMAN
 
           Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
+
+          <details>
+          <summary>Job JSON</summary>
+          \`\`\`json
+          $JOB_JSON
+          \`\`\`
+          </details>
           COMMENT_EOF
