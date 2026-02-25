@@ -13,6 +13,6 @@ discover:
 execute:
     how: tmt
 
-/job-runner
+/job-runner:
     summary: Run bot job-runner task
     test: ./job-runner.sh
