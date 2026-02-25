@@ -146,6 +146,7 @@ jobs:
 
           <details>
           <summary>Job JSON</summary>
+
           \`\`\`json
           $JOB_JSON
           \`\`\`
