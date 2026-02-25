@@ -37,9 +37,7 @@ jobs:
           # Scan the issue/PR for bot tasks
           GITHUB_BASE=${{ github.repository }} \
           ./issue-scan --issues-data '${{ toJSON(github.event) }}' > scan-output.json
-
-          # for debugging
-          cat scan-output.json
+          # cat scan-output.json
 
           # Check if we got any tasks
           if [ ! -s scan-output.json ]; then
@@ -116,8 +114,8 @@ jobs:
             https://api.dev.testing-farm.io/v0.1/requests)
 
           # Debug: show the whole response
-          echo "Testing Farm response:"
-          echo "$TF_RESPONSE" | jq .
+          # echo "Testing Farm response:"
+          # echo "$TF_RESPONSE" | jq .
 
           # Sadly, the response does not include the artifacts URL, the only
           # useful thing is the ID
