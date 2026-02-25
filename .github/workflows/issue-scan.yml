@@ -66,33 +66,66 @@ jobs:
             echo "git_ref=${{ github.event.repository.default_branch }}" >> $GITHUB_OUTPUT
           fi
 
+      # https://api.dev.testing-farm.io/docs ; don't use sclorg/testing-farm-as-github-action4
+      # as we don't want to poll (that's just a waste of GH action runner time)
       - name: Schedule on Testing Farm
         id: testing_farm
         if: steps.scan.outputs.job_json != ''
-        uses: sclorg/testing-farm-as-github-action@v4
-        with:
-          # does not matter much, we just need `podman` to run the tasks container
-          compose: Fedora-43-Updated
-          timeout: 60
-          api_key: ${{ secrets.TESTING_FARM_RH_TOKEN }}
-          git_url: ${{ steps.gitref.outputs.git_url }}
-          git_ref: ${{ steps.gitref.outputs.git_ref }}
-          # Provide commit_sha so action doesn't try to fetch PR info via API
-          commit_sha: ${{ steps.scan.outputs.sha }}
-          # For PRs, provide the PR number for comments/status
-          pr_number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
-          tmt_hardware: '{"virtualization": {"is-virtualized": true, "is-supported": true}}'
-          secrets: >
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }};
-            S3_KEY_EU=${{ secrets.S3_KEY_EU }};
-            S3_KEY_US=${{ secrets.S3_KEY_US }};
-            S3_KEY_LOGS=${{ secrets.S3_KEY_LOGS }}
-          variables: >
-            JOB_JSON=${{ steps.scan.outputs.job_json }}
-          tmt_plan_regex: issue-scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
 
-      - name: Post Testing Farm failure comment
-        if: failure() && steps.testing_farm.conclusion == 'failure'
+          # Build Testing Farm API request
+          # compose does not matter much, we just need python-aiohttp and podman to for job-runner and the tasks container
+          cat > tf-request.json << 'EOF'
+          {
+            "api_key": "${{ secrets.TESTING_FARM_RH_TOKEN }}",
+            "test": {
+              "fmf": {
+                "url": "${{ steps.gitref.outputs.git_url }}",
+                "ref": "${{ steps.gitref.outputs.git_ref }}",
+                "name": "issue-scan"
+              }
+            },
+            "environments": [{
+              "arch": "x86_64",
+              "os": {"compose": "Fedora-43-Updated"},
+              "variables": {
+                "JOB_JSON": ${{ steps.scan.outputs.job_json }}
+              },
+              "secrets": {
+                "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                "S3_KEY_EU": "${{ secrets.S3_KEY_EU }}",
+                "S3_KEY_US": "${{ secrets.S3_KEY_US }}",
+                "S3_KEY_LOGS": "${{ secrets.S3_KEY_LOGS }}"
+              },
+              "hardware": {"virtualization": {"is-virtualized": true, "is-supported": true}}
+            }],
+            "settings": {
+              "pipeline": {"timeout": 60}
+            }
+          }
+          EOF
+
+          # Submit to Testing Farm
+          TF_RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d @tf-request.json \
+            https://api.dev.testing-farm.io/v0.1/requests)
+
+          # Debug: show the whole response
+          echo "Testing Farm response:"
+          echo "$TF_RESPONSE" | jq .
+
+          # Parse response
+          TF_ID=$(echo "$TF_RESPONSE" | jq -r '.id')
+          # TODO: don't hardcode this, extract from response
+          TF_ARTIFACTS_URL="https://artifacts.osci.redhat.com/testing-farm/$TF_ID"
+
+          echo "test_log_url=$TF_ARTIFACTS_URL" >> $GITHUB_OUTPUT
+
+      - name: Post comment with Testing Farm link
+        if: steps.scan.outputs.job_json != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -103,13 +136,12 @@ jobs:
             ISSUE_NUMBER="${{ github.event.issue.number }}"
           fi
 
-          # Create comment body with properly formatted JSON
-          cat << EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
-          **Job failed on Testing Farm**
+          cat << COMMENT_EOF | gh issue comment "$ISSUE_NUMBER" --body-file -
+          **Bot task scheduled on Testing Farm**
 
           \`\`\`json
           $(echo '${{ steps.scan.outputs.job_json }}' | jq .)
           \`\`\`
 
           Testing Farm logs: ${{ steps.testing_farm.outputs.test_log_url }}
-          EOF
+          COMMENT_EOF
