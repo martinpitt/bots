@@ -41,7 +41,8 @@ jobs:
         run: |
           # Scan the issue/PR for bot tasks
           GITHUB_BASE=${{ github.repository }} \
-          SCAN_OUT=$(./issue-scan --issues-data '${{ toJSON(github.event) }}')
+          # compactify the JSON output to make it easier to pass around
+          SCAN_OUT=$(./issue-scan --issues-data '${{ toJSON(github.event) }}' | jq -c .)
           echo "---- Scan output ----"
           echo "$SCAN_OUT"
           echo "---------------------"
