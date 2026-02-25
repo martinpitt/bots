@@ -19,7 +19,6 @@ jobs:
       # post statuses/comments
       issues: write
       pull-requests: write
-      statuses: write
     # XXX: for testing on my fork only, don't land this
     env:
       COCKPIT_TESTMAP_INJECT: main/none
@@ -78,7 +77,7 @@ jobs:
             --arg api_key '${{ secrets.TESTING_FARM_RH_TOKEN }}' \
             --arg git_url '${{ steps.gitref.outputs.git_url }}' \
             --arg git_ref '${{ steps.gitref.outputs.git_ref }}' \
-            --arg gh_token '${{ secrets.GITHUB_TOKEN }}' \
+            --arg gh_token '${{ secrets.COCKPITUOUS_TOKEN }}' \
             --arg s3_eu '${{ secrets.S3_KEY_EU }}' \
             --arg s3_us '${{ secrets.S3_KEY_US }}' \
             --arg s3_logs '${{ secrets.S3_KEY_LOGS }}' \
