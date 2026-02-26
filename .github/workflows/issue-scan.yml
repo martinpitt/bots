@@ -23,10 +23,6 @@ jobs:
       # post comments and PRs
       issues: write
       pull-requests: write
-    # this enables running/testing this workflow on a fork, otherwise issue-scan will fail
-    # on testmap.get_default_branch(your_fork); it's otherwise harmless
-    env:
-     COCKPIT_TESTMAP_INJECT: main/none
     steps:
       - name: Clone repository
         uses: actions/checkout@v5
@@ -65,10 +61,11 @@ jobs:
         id: testing_farm
         if: steps.scan.outputs.scan_output != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # does not matter much, we just need python-aiohttp and podman for job-runner and the tasks container; keep at recent Fedora
+          # https://api.testing-farm.io/v0.1/composes/redhat
+          TF_COMPOSE: Fedora-43-Updated
         run: |
           # Build Testing Farm API request using jq for proper escaping
-          # compose does not matter much, we just need python-aiohttp and podman to for job-runner and the tasks container
           echo '${{ steps.scan.outputs.scan_output }}' | jq \
             --arg api_key '${{ secrets.TESTING_FARM_RH_TOKEN }}' \
             --arg git_url '${{ steps.gitref.outputs.git_url }}' \
@@ -77,6 +74,7 @@ jobs:
             --arg s3_eu '${{ secrets.S3_KEY_EU }}' \
             --arg s3_us '${{ secrets.S3_KEY_US }}' \
             --arg s3_logs '${{ secrets.S3_KEY_LOGS }}' \
+            --arg compose "$TF_COMPOSE" \
             '{
               "api_key": $api_key,
               "test": {
@@ -88,7 +86,7 @@ jobs:
               },
               "environments": [{
                 "arch": "x86_64",
-                "os": {"compose": "Fedora-43-Updated"},
+                "os": {"compose": $compose},
                 "variables": {
                   "JOB_JSON": (.job | tojson)
                 },
@@ -106,17 +104,10 @@ jobs:
             }' > tf-request.json
 
           # Submit to Testing Farm
-          TF_RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d @tf-request.json \
-            https://api.dev.testing-farm.io/v0.1/requests)
-
-          # Debug: show the whole response
-          # echo "Testing Farm response:"
-          # echo "$TF_RESPONSE" | jq .
+          TF_RESPONSE=$(curl -s --json @tf-request.json https://api.dev.testing-farm.io/v0.1/requests)
 
           # Sadly, the response does not include the artifacts URL, the only
-          # useful thing is the ID
+          # useful thing is the ID; so we have to hardcode it
           TF_ID=$(echo "$TF_RESPONSE" | jq -r '.id')
           echo "test_log_url=https://artifacts.osci.redhat.com/testing-farm/$TF_ID" >> $GITHUB_OUTPUT
 
@@ -124,14 +115,8 @@ jobs:
         if: steps.scan.outputs.scan_output != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
-          # Determine issue/PR number
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            ISSUE_NUMBER="${{ github.event.pull_request.number }}"
-          else
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
-          fi
-
           HUMAN=$(echo '${{ steps.scan.outputs.scan_output }}' | jq -r '.human')
           JOB_JSON=$(echo '${{ steps.scan.outputs.scan_output }}' | jq '.job')
 

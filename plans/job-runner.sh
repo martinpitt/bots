@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: LGPL-2.1-or-later
 #
-# Invoke bots job-runner with podman through tmt.
+# Invoke bots job-runner with podman.
 # Intended to run on a cloud instance with KVM support.
 #
 # Required environment variables:
@@ -10,6 +10,10 @@
 #   S3_KEY_LOGS     - S3 credentials for log storage
 #   JOB_JSON        - job-runner specification
 #
+# You can test this locally by creating a GitHub PAT with repo:status and public_repo scopes in /tmp/token,
+# checking out the Cockpit CI credentials into /tmp/ci-secrets, copying the job JSON to /tmp/job.json, and running:
+#
+# JOB_JSON=$(< /tmp/job.json) GITHUB_TOKEN=$(< /tmp/token) S3_KEY_LOGS=$(< /tmp/ci-secrets/github/env/image-build/S3_KEY_LOGS) S3_KEY_EU=$(< /tmp/ci-secrets/github/env/image-build/S3_KEY_EU) S3_KEY_US=$(< /tmp/ci-secrets/github/env/image-build/S3_KEY_US) plans/job-runner.sh
 set -eu
 
 # Set up secrets BEFORE enabling -x
@@ -25,11 +29,11 @@ set -x
 
 # Check that KVM is available
 test -c /dev/kvm
-# Log the commit we're running, for debugging
+# Log the current commit for debugging
 git show -s
 
 # Create job-runner config
-cat > job-runner.toml << EOF
+cat > job-runner-local.toml << EOF
 [logs]
 driver = 's3'
 
@@ -62,4 +66,4 @@ image-upload = [
 EOF
 
 BOTS_DIR=$(git rev-parse --show-toplevel)
-"$BOTS_DIR/job-runner" --config-file job-runner.toml json "$JOB_JSON"
+"$BOTS_DIR/job-runner" --config-file job-runner-local.toml json "$JOB_JSON"
