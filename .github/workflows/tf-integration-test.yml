@@ -1,0 +1,51 @@
+name: TF
+on:
+  pull_request:
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate test matrix
+        id: set-matrix
+        run: |
+          # TODO: Eventually extract from lib/testmap.py
+          # For now, hardcode the list
+          echo 'matrix={"include":[{"test_os":"fedora-43","test_scenario":"firefox"},{"test_os":"centos-10","test_scenario":""}]}' >> $GITHUB_OUTPUT
+
+  os:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - name: Schedule test on Testing Farm
+        uses: sclorg/testing-farm-as-github-action@v4
+        with:
+          api_key: ${{ secrets.TESTING_FARM_PUBLIC_API_KEY }}
+          # https://api.testing-farm.io/v0.1/composes/public
+          compose: Fedora-latest
+          # Specify git repository and ref for PR head
+          git_url: ${{ github.event.pull_request.head.repo.clone_url }}
+          git_ref: ${{ github.event.pull_request.head.ref }}
+          # Request virtualized guest with KVM support
+          # https://tmt.readthedocs.io/en/stable/spec/hardware.html
+          # these don't currently scale well on TF
+          #    "cpu": {"cores": ">= 8"},
+          #    "memory": ">= 16 GB"
+          tmt_hardware: |
+            {
+              "virtualization": {"is-supported": true}
+            }
+          # Pass secrets to the test environment (semicolon-separated)
+          secrets: TEST_SECRET=${{ secrets.TEST_SECRET }}
+          # Pass git info for cloning inside container
+          variables: GIT_URL=${{ github.event.pull_request.head.repo.clone_url }};GIT_REF=${{ github.event.pull_request.head.ref }};TEST_OS=${{ matrix.test_os }};TEST_SCENARIO=${{ matrix.test_scenario }}
+          timeout: 60
