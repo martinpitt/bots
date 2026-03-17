@@ -34,8 +34,8 @@ jobs:
           [secrets.inline]
           github-token = '${{ secrets.COCKPITUOUS_TOKEN }}'
           s3-keys = {
-              'eu-central-1.linodeobjects.com'='${{ secrets.S3_KEY_EU }}',
-              'us-east-1.linodeobjects.com'='${{ secrets.S3_KEY_US }}'
+              "eu-central-1.linodeobjects.com"='${{ secrets.S3_KEY_EU }}',
+              "us-east-1.linodeobjects.com"='${{ secrets.S3_KEY_US }}'
           }
 
           [logs]
